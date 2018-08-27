@@ -141,32 +141,10 @@ public class SQLitePlugin extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void executeSqlBatch(ReadableMap args, Callback success, Callback error) {
-        String actionAsString = "executeSqlBatch";
-        try {
-            this.execute(actionAsString, args, new CallbackContext(success, error));
-        } catch (Exception ex){
-            error.invoke("Unexpected error");
-        }
-    }
-
-    @ReactMethod
     public void echoStringValue(ReadableMap args, Callback success, Callback error) {
         String actionAsString = "echoStringValue";
         try {
             this.execute(actionAsString, args, new CallbackContext(success, error));
-        } catch (Exception ex){
-            error.invoke("Unexpected error");
-        }
-    }
-
-    @ReactMethod
-    public void echoStringValue(ReadableMap args, Callback success, Callback error) {
-        String actionAsString = "echoStringValue";
-        try {
-            JSONArray params = new JSONArray();
-            params.put(SQLitePluginConverter.reactToJSON(args));
-            this.execute(actionAsString, params, new CallbackContext(success, error));
         } catch (Exception ex){
             error.invoke("Unexpected error");
         }
@@ -228,11 +206,10 @@ public class SQLitePlugin extends ReactContextBaseJavaModule {
                 break;
 
             case open:
-                o = args.getJSONObject(0);
-                dbname = o.getString("name");
+                dbname = SQLitePluginConverter.getString(args, "name", "");
                 key = SQLitePluginConverter.getString(args, "key", "");
                 // open database and start reading its queue
-                this.startDatabase(dbname, key, o, cbc);
+                this.startDatabase(dbname, key, args, cbc);
                 break;
 
             case close:
@@ -646,7 +623,7 @@ public class SQLitePlugin extends ReactContextBaseJavaModule {
                         FLog.e(TAG, "SQLiteStatement.executeUpdateDelete() failed", ex);
                         needRawQuery = false;
                     } finally {
-                        closeQuietly(myStatement);
+                        // closeQuietly(myStatement);
                     }
 
                     if (rowsAffected != -1) {
@@ -682,12 +659,7 @@ public class SQLitePlugin extends ReactContextBaseJavaModule {
                         errorMessage = ex.getMessage();
                         FLog.e(TAG, "SQLiteDatabase.executeInsert() failed", ex);
                     } finally {
-                        closeQuietly(myStatement);
-                    }
-                    finally {
-                        if (myStatement != null) {
-                            myStatement.close();
-                        }
+                        // closeQuietly(myStatement);
                     }
                 }
 
