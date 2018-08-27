@@ -23,6 +23,10 @@ android {
     lintOptions {
         abortOnError false
     }
+    sourceSets.main {
+        jni.srcDirs = [] // This prevents the auto generation of Android.mk
+        jniLibs.srcDir 'libs' 
+    }
 }
 
 repositories {
@@ -31,5 +35,5 @@ repositories {
 
 dependencies {
     compile 'com.facebook.react:react-native:0.14.+'
-    compile 'net.zetetic:android-database-sqlcipher:3.5.9@aar'
+    compile files('libs/sqlite-connector.jar')
 }

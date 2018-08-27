@@ -3,15 +3,19 @@
  *
  * Copyright (c) 2015, Andrzej Porebski
  */
-package org.pgsqlite;
+package io.liteglue;
 
 import com.facebook.react.bridge.Callback;
 import com.facebook.react.bridge.WritableArray;
 import com.facebook.react.bridge.WritableMap;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 public class CallbackContext {
 
-    private static final String LOG_TAG = CallbackContext.class.getSimpleName();
+    private static final String LOG_TAG = "SQLitePlugin";
 
     private Callback successCallback;
     private Callback errorCallback;
@@ -28,7 +32,6 @@ public class CallbackContext {
      */
     public void success(WritableMap message) {
         successCallback.invoke(message);
-
     }
 
     /**

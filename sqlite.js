@@ -2,7 +2,7 @@
  * sqlite.js
  *
  * Created by Andrzej Porebski on 10/29/15.
- * Copyright (c) 2015 Andrzej Porebski.
+ * Copyright (c) 2015-16 Andrzej Porebski.
  *
  * This library is available under the terms of the MIT License (2008).
  * See http://opensource.org/licenses/alphabetical for full text.
@@ -12,13 +12,20 @@ import plugin, {SQLiteFactory} from './lib/sqlite.core.js';
 
 
 var config = [
-  [false,"SQLitePlugin","transaction",false,true],
-  [false,"SQLitePlugin","readTransaction",false,true],
-  [false,"SQLitePlugin","close",false,false],
-  [false,"SQLitePlugin","executeSql",true,false],
-  [false,"SQLitePluginTransaction","executeSql",true,false],
-  [false,"SQLiteFactory","deleteDatabase",false,false],
-  [true,"SQLiteFactory","openDatabase",false,false]
+
+  // meaning: [returnValueExpected,prototype,fn,argsNeedPadding,reverseCallbacks,rejectOnError]
+
+  [false,"SQLitePlugin","transaction",false,true,true],
+  [false,"SQLitePlugin","readTransaction",false,true,true],
+  [false,"SQLitePlugin","close",false,false,true],
+  [false,"SQLitePlugin","executeSql",true,false,true],
+  [false,"SQLitePlugin","sqlBatch",false,false,true],
+  [false,"SQLitePlugin","attach",true,false,true],
+  [false,"SQLitePlugin","detach",false,false,true],
+  [false,"SQLitePluginTransaction","executeSql",true,false,false],
+  [false,"SQLiteFactory","deleteDatabase",false,false,true],
+  [true, "SQLiteFactory","openDatabase",false,false,true],
+  [false,"SQLiteFactory","echoTest",false,false,true]
 ];
 
 var originalFns = {};
@@ -34,45 +41,45 @@ function enablePromiseRuntime(enable){
   } else {
     createCallbackRuntime();
   }
-};
-
+}
 function createCallbackRuntime() {
   config.forEach(entry => {
-    let [returnValueExpected,prototype,fn,argsNeedPadding,reverseCallbacks]= entry;
+    let [returnValueExpected,prototype,fn,argsNeedPadding,reverseCallbacks,rejectOnError]= entry;
     plugin[prototype].prototype[fn] = originalFns[prototype + "." + fn];
   });
   console.log("Callback based runtime ready");
-};
-
+}
 function createPromiseRuntime() {
   config.forEach(entry => {
-    let [returnValueExpected,prototype,fn,argsNeedPadding,reverseCallbacks]= entry;
-    let originalFn = plugin[prototype].prototype[fn]
+    let [returnValueExpected,prototype,fn,argsNeedPadding,reverseCallbacks,rejectOnError]= entry;
+    let originalFn = plugin[prototype].prototype[fn];
     plugin[prototype].prototype[fn] = function(...args){
       if (argsNeedPadding && args.length == 1){
         args.push([]);
       }
-      let retValue;
-      var promise = new Promise(function(resolve,reject){
+      var promise = new Promise((resolve,reject) => {
         let success = function(...args){
            return returnValueExpected ? resolve(retValue) : resolve(args);
         };
         let error = function(err){
           console.log('error: ',fn,...args,arguments);
-          reject(err);
+          if (rejectOnError) {
+            reject(err);
+          }
           return false;
         };
-        retValue = originalFn.call(this,...args,reverseCallbacks ? error : success, reverseCallbacks ? success : error);
-
-      }.bind(this));
+        var retValue = originalFn.call(this,...args,reverseCallbacks ? error : success, reverseCallbacks ? success : error);
+        if (returnValueExpected){
+          return resolve(retValue);
+        }
+      });
 
 
       return promise;
     }
   });
   console.log("Promise based runtime ready");
-};
-
+}
 SQLiteFactory.prototype.enablePromise = enablePromiseRuntime;
 
 module.exports = new SQLiteFactory();

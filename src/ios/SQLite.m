@@ -24,6 +24,7 @@
 #import <React/RCTEventDispatcher.h>
 
 /*
+ * Copyright (C) 2015-Present Andrzej Porebski
  * Copyright (C) 2012-2015 Chris Brody
  * Copyright (C) 2011 Davide Bertola
  *
@@ -41,8 +42,8 @@ static void sqlite_regexp(sqlite3_context* context, int argc, sqlite3_value** va
     return;
   }
   
-  char* reg = (char*)sqlite3_value_text(values[0]);
-  char* text = (char*)sqlite3_value_text(values[1]);
+  char* reg  = (char*) sqlite3_value_text(values[0]);
+  char* text = (char*) sqlite3_value_text(values[1]);
   
   if ( argc != 2 || reg == 0 || text == 0) {
     sqlite3_result_error(context, "SQL function regexp() called with invalid arguments.", -1);
@@ -74,7 +75,7 @@ RCT_EXPORT_MODULE();
 
 - (id) init
 {
-  NSLog(@"Initializing SQLitePlugin");
+  RCTLog(@"Initializing SQLitePlugin");
   self = [super init];
   if (self) {
     openDBs = [NSMutableDictionary dictionaryWithCapacity:0];
@@ -85,18 +86,18 @@ RCT_EXPORT_MODULE();
 #endif
     
     NSString *docs = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) objectAtIndex: 0];
-    NSLog(@"Detected docs path: %@", docs);
+    RCTLog(@"Detected docs path: %@", docs);
     [appDBPaths setObject: docs forKey:@"docs"];
     
     NSString *libs = [NSSearchPathForDirectoriesInDomains(NSLibraryDirectory, NSUserDomainMask, YES) objectAtIndex: 0];
-    NSLog(@"Detected Library path: %@", libs);
+    RCTLog(@"Detected Library path: %@", libs);
     [appDBPaths setObject: libs forKey:@"libs"];
     
     NSString *nosync = [libs stringByAppendingPathComponent:@"LocalDatabase"];
     NSError *err;
     if ([[NSFileManager defaultManager] fileExistsAtPath: nosync])
     {
-      NSLog(@"no cloud sync at path: %@", nosync);
+      RCTLog(@"no cloud sync at path: %@", nosync);
       [appDBPaths setObject: nosync forKey:@"nosync"];
     }
     else
@@ -106,15 +107,15 @@ RCT_EXPORT_MODULE();
         NSURL *nosyncURL = [ NSURL fileURLWithPath: nosync];
         if (![nosyncURL setResourceValue: [NSNumber numberWithBool: YES] forKey: NSURLIsExcludedFromBackupKey error: &err])
         {
-          NSLog(@"IGNORED: error setting nobackup flag in LocalDatabase directory: %@", err);
+          RCTLog(@"IGNORED: error setting nobackup flag in LocalDatabase directory: %@", err);
         }
-        NSLog(@"no cloud sync at path: %@", nosync);
+        RCTLog(@"no cloud sync at path: %@", nosync);
         [appDBPaths setObject: nosync forKey:@"nosync"];
       }
       else
       {
         // fallback:
-        NSLog(@"WARNING: error adding LocalDatabase directory: %@", err);
+        RCTLog(@"WARNING: error adding LocalDatabase directory: %@", err);
         [appDBPaths setObject: libs forKey:@"nosync"];
       }
     }
@@ -132,52 +133,68 @@ RCT_EXPORT_MODULE();
     return NULL;
   }
   
-  NSString *dbdir = [appDBPaths objectForKey:atkey];
-  //NSString *dbPath = [NSString stringWithFormat:@"%@/%@", dbdir, dbFile];
+  NSString *dbdir = appDBPaths[atkey];
   NSString *dbPath = [dbdir stringByAppendingPathComponent: dbFile];
   return dbPath;
 }
 
+RCT_EXPORT_METHOD(echoStringValue: (NSDictionary *) options success:(RCTResponseSenderBlock)success error:(RCTResponseSenderBlock)error)
+{
+  NSString * string_value = options[@"value"];
+  RCTLog(@"echo string value: %@", string_value);
+  
+  SQLiteResult* pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_OK messageAsString:string_value];
+  [pluginResult.status intValue] == SQLiteStatus_OK ? success(@[pluginResult.message]) : error(@[pluginResult.message]);
+}
 
 RCT_EXPORT_METHOD(open: (NSDictionary *) options success:(RCTResponseSenderBlock)success error:(RCTResponseSenderBlock)error)
 {
   SQLiteResult* pluginResult = nil;
+  NSString *dbname;
+  int sqlOpenFlags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE;
   
-  NSString *dbfilename = [options objectForKey:@"name"];
-  NSString *dblocation = [options objectForKey:@"dblocation"];
-  if (dblocation == NULL) dblocation = @"docs";
-  NSLog(@"using db location: %@", dblocation);
-  
-  NSString *dbname = [self getDBPath:dbfilename at:dblocation];
-  
-  if (dbname == NULL) {
-    NSLog(@"No db name specified for open");
-    pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_OK messageAsString:@"You must specify database name"];
-  }
-  else {
-    NSValue *dbPointer = [openDBs objectForKey:dbfilename];
-    
-    if (dbPointer != NULL) {
-      NSLog(@"Reusing existing database connection for db name %@", dbfilename);
-      pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_OK messageAsString:@"Database opened"];
+  @synchronized (self) {
+    NSString *dbfilename = options[@"name"];
+    if (dbfilename == NULL) {
+      RCTLog(@"No db name specified for open");
+      pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_OK messageAsString:@"You must specify database name"];
     } else {
-      const char *name = [dbname UTF8String];
-      sqlite3 *db;
-      
-      NSLog(@"open full db path: %@", dbname);
-      
-      /* Option to create from resource (pre-populated) if db does not exist: */
-      if (![[NSFileManager defaultManager] fileExistsAtPath:dbname]) {
-        NSString *createFromResource = [options objectForKey:@"createFromResource"];
-        if (createFromResource != NULL)
-          [self createFromResource:dbfilename withDbname:dbname];
-      }
-      
-      if (sqlite3_open(name, &db) != SQLITE_OK) {
-        pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_ERROR messageAsString:@"Unable to open DB"];
-        return;
+      NSDictionary *dbInfo = openDBs[dbfilename];
+      if (dbInfo != NULL && dbInfo[@"dbPointer"] != NULL) {
+        RCTLog(@"Reusing existing database connection for db name %@", dbfilename);
+        pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_OK messageAsString:@"Database opened"];
       } else {
-        sqlite3_create_function(db, "regexp", 2, SQLITE_ANY, NULL, &sqlite_regexp, NULL, NULL);
+        NSString *assetFilePath = options[@"assetFilename"];
+        if (assetFilePath != NULL && assetFilePath.length > 0) {
+          @try {
+            if ([assetFilePath isEqualToString:@"1"]){
+              NSString *targetBundleDirPath = [[NSBundle mainBundle] resourcePath];
+              targetBundleDirPath = [targetBundleDirPath stringByAppendingPathComponent: @"www"];
+              assetFilePath = [targetBundleDirPath stringByAppendingPathComponent: dbfilename];
+              RCTLog(@"Built path to pre-populated DB asset from app bundle www subdirectory: %@",assetFilePath);
+            } else if ([assetFilePath hasPrefix:@"~"]) {
+              assetFilePath = [assetFilePath substringFromIndex:1];
+              NSString *targetBundleDirPath = [[NSBundle mainBundle] resourcePath];
+              assetFilePath = [targetBundleDirPath stringByAppendingPathComponent: assetFilePath];
+              RCTLog(@"Built path to pre-populated DB asset from app bundle subdirectory: %@",assetFilePath);
+            } else {
+              NSURL * documentsDirUrl = [[[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory
+                                                                        inDomains:NSUserDomainMask] lastObject];
+              assetFilePath = [documentsDirUrl.path stringByAppendingPathComponent:assetFilePath];
+              RCTLog(@"Built path to pre-populated DB asset from app sandbox documents directory: %@",assetFilePath);
+            }
+          } @catch(NSException *ex){
+            RCTLog(@"Error building path for pre-populated DB asset %@",ex.reason);
+          }
+        }
+      
+        if (options[@"readOnly"] && assetFilePath != NULL){
+          sqlOpenFlags = SQLITE_OPEN_READONLY;
+          dbname = assetFilePath;
+        } else {
+          NSString *dblocation = options[@"dblocation"];
+          if (dblocation == NULL) dblocation = @"nosync";
+          RCTLog(@"target database location: %@", dblocation);
         
         // for SQLCipher version:
         NSString *dbkey = [options objectForKey:@"key"];
@@ -185,47 +202,75 @@ RCT_EXPORT_METHOD(open: (NSDictionary *) options success:(RCTResponseSenderBlock
         if (dbkey != NULL) key = [dbkey UTF8String];
         if (key != NULL) sqlite3_key(db, key, strlen(key));
         
-        // Attempt to read the SQLite master table [to support SQLCipher version]:
-        if(sqlite3_exec(db, (const char*)"SELECT count(*) FROM sqlite_master;", NULL, NULL, NULL) == SQLITE_OK) {
-          dbPointer = [NSValue valueWithPointer:db];
-          [openDBs setObject: dbPointer forKey: dbfilename];
-          pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_OK messageAsString:@"Database opened"];
+        /* Option to create from resource (pre-populated) if db does not exist: */
+        if (![[NSFileManager defaultManager] fileExistsAtPath:dbname] && assetFilePath != NULL) {
+          RCTLog(@"Copying pre-populated asset to the destination directory");
+          [self createFromResource:assetFilePath withDbname:dbname];
+        }
+      
+        RCTLog(@"Opening db in mode %@, full path: %@", (sqlOpenFlags == SQLITE_OPEN_READONLY) ? @"READ ONLY" : @"READ_WRITE",dbname);
+      
+        const char *name = [dbname UTF8String];
+        sqlite3 *db;
+      
+        if (sqlite3_open_v2(name, &db,sqlOpenFlags, NULL) != SQLITE_OK) {
+          pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_ERROR messageAsString:@"Unable to open DB"];
+          return;
         } else {
-          pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_ERROR messageAsString:@"Unable to open DB with key"];
-          // XXX TODO: close the db handle & [perhaps] remove from openDBs!!
+          sqlite3_create_function(db, "regexp", 2, SQLITE_ANY, NULL, &sqlite_regexp, NULL, NULL);
+          const char *key = NULL;
+          
+#ifdef SQLCIPHER
+          NSString *dbkey = options[@"key"];
+          if (dbkey != NULL) {
+            key = [dbkey UTF8String];
+            if (key != NULL) {
+              sqlite3_key(db, key, strlen(key));
+            }
+          }
+#endif
+          // Attempt to read the SQLite master table [to support SQLCipher version]:
+          if(sqlite3_exec(db, (const char*)"SELECT count(*) FROM sqlite_master;", NULL, NULL, NULL) == SQLITE_OK) {
+            NSValue *dbPointer = [NSValue valueWithPointer:db];
+            openDBs[dbfilename] = @{ @"dbPointer": dbPointer, @"dbPath" : dbname};
+            NSString *msg = (key != NULL) ? @"Secure database opened" : @"Database opened";
+            pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_OK messageAsString: msg];
+            RCTLog(@"%@", msg);
+          } else {
+            NSString *msg = [NSString stringWithFormat:@"Unable to open %@", (key != NULL) ? @"secure database with key" : @"database"];
+            pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_ERROR messageAsString:msg];
+            RCTLog(@"%@", msg);
+            sqlite3_close (db);
+            [openDBs removeObjectForKey:dbfilename];
+          }
         }
       }
     }
   }
   
   if (sqlite3_threadsafe()) {
-    NSLog(@"Good news: SQLite is thread safe!");
-  }
-  else {
-    NSLog(@"Warning: SQLite is not thread safe.");
+    RCTLog(@"Good news: SQLite is thread safe!");
+  } else {
+    RCTLog(@"Warning: SQLite is not thread safe.");
   }
   
   [pluginResult.status intValue] == SQLiteStatus_OK ? success(@[pluginResult.message]) : error(@[pluginResult.message]);
-  
-  //NSLog(@"open cb finished ok");
+  RCTLog(@"open cb finished ok");
 }
 
-
--(void)createFromResource:(NSString *)dbfile withDbname:(NSString *)dbname {
-  NSString *bundleRoot = [[NSBundle mainBundle] resourcePath];
-  NSString *www = [bundleRoot stringByAppendingPathComponent:@"www"];
-  NSString *prepopulatedDb = [www stringByAppendingPathComponent: dbfile];
-  // NSLog(@"Look for prepopulated DB at: %@", prepopulatedDb);
+-(void)createFromResource:(NSString *)prepopulatedDb withDbname:(NSString *)dbname {
+  RCTLog(@"Looking for prepopulated DB at: %@", prepopulatedDb);
   
   if ([[NSFileManager defaultManager] fileExistsAtPath:prepopulatedDb]) {
-    NSLog(@"Found prepopulated DB: %@", prepopulatedDb);
+    RCTLog(@"Found prepopulated DB: %@", prepopulatedDb);
     NSError *error;
     BOOL success = [[NSFileManager defaultManager] copyItemAtPath:prepopulatedDb toPath:dbname error:&error];
     
-    if(success)
-      NSLog(@"Copied prepopulated DB content to: %@", dbname);
-    else
-      NSLog(@"Unable to copy DB file: %@", [error localizedDescription]);
+    if(success) {
+      RCTLog(@"Copied prepopulated DB content to: %@", dbname);
+    } else {
+      RCTLog(@"Unable to copy DB file: %@", [error localizedDescription]);
+    }
   }
 }
 
@@ -233,39 +278,87 @@ RCT_EXPORT_METHOD(open: (NSDictionary *) options success:(RCTResponseSenderBlock
 RCT_EXPORT_METHOD(close: (NSDictionary *) options success:(RCTResponseSenderBlock)success error:(RCTResponseSenderBlock)error)
 {
   SQLiteResult* pluginResult = nil;
-  
-  NSString *dbFileName = [options objectForKey:@"path"];
-  
-  if (dbFileName == NULL) {
-    // Should not happen:
-    NSLog(@"No db name specified for close");
-    pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_ERROR messageAsString:@"You must specify database path"];
-  } else {
-    NSValue *val = [openDBs objectForKey:dbFileName];
-    sqlite3 *db = [val pointerValue];
-    NSString *dbPath = [self getDBPath:dbFileName at:@"docs"];
-    
-    if ([[NSFileManager defaultManager]fileExistsAtPath:dbPath]) {
-      NSLog(@"database still exists");
-    }
-    if (db == NULL) {
+  @synchronized (self) {
+    NSString *dbFileName = options[@"path"];
+    if (dbFileName == NULL) {
       // Should not happen:
-      NSLog(@"close: db name was not open: %@", dbFileName);
-      pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_ERROR messageAsString:@"Specified db was not open"];
-    }
-    else {
-      NSLog(@"close db name: %@", dbFileName);
-      
-      sqlite3_close (db);
-      [openDBs removeObjectForKey:dbFileName];
-      pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_OK messageAsString:@"DB closed"];
-    }
-    if ([[NSFileManager defaultManager]fileExistsAtPath:dbPath]) {
-      NSLog(@"database file still exists after close");
+      RCTLog(@"No db name specified for close");
+      pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_ERROR messageAsString:@"You must specify database path"];
     } else {
-      NSLog(@"database file doesn't exists after close");
+      NSDictionary *dbInfo = openDBs[dbFileName];
+      if (dbInfo == NULL || dbInfo[@"dbPointer"] == NULL) {
+        RCTLog(@"close: db name was not found in open databases: %@", dbFileName);
+        pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_ERROR messageAsString:@"Specified db was not open"];
+      } else {
+        sqlite3 *db = [((NSValue *) dbInfo[@"dbPointer"]) pointerValue];
+        NSString *dbPath = dbInfo[@"dbPath"];
+            
+        if ([[NSFileManager defaultManager] fileExistsAtPath:dbPath]) {
+          RCTLog(@"close: database still exists at path %@, proceeding to close it.",dbPath);
+        }
+            
+        if (db == NULL) {
+          // Should not happen:
+          RCTLog(@"close: db name was not open: %@", dbFileName);
+          pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_ERROR messageAsString:@"Specified db was not open"];
+        } else {
+          RCTLog(@"close: closing db: %@", dbFileName);
+            sqlite3_close (db);
+            [openDBs removeObjectForKey:dbFileName];
+            pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_OK messageAsString:@"DB closed"];
+        }
+
+        if ([[NSFileManager defaultManager]fileExistsAtPath:dbPath]) {
+          RCTLog(@"database file still exists after close");
+        } else {
+          RCTLog(@"database file doesn't exists after close");
+        }
+      }
     }
-    
+  }
+  
+  [pluginResult.status intValue] == SQLiteStatus_OK ? success(@[pluginResult.message]) : error(@[pluginResult.message]);
+}
+
+RCT_EXPORT_METHOD(attach: (NSDictionary *) options success:(RCTResponseSenderBlock)success error:(RCTResponseSenderBlock)error)
+{
+  SQLiteResult* pluginResult = nil;
+  
+  NSString *dbFileName = options[@"path"]; // path to current database instance
+
+  NSString *dbName = options[@"dbName"]; // dbName that should be attached to dbFileName
+  NSString *dbAlias = options[@"dbAlias"]; // the Alias that should be use with ATTACH DATABASE
+  
+  if (dbName == NULL || dbAlias == NULL) {
+    // Should not happen:
+    RCTLog(@"No dbName or dbAlias specified for attach");
+    pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_ERROR messageAsString:@"You must specify dbName and dbAlias"];
+  } else {
+    RCTLog(@"Will attach %@ with alias %@", dbName, dbAlias);
+    @synchronized (self) {
+      NSDictionary *dbInfo = openDBs[dbFileName];
+      NSDictionary *dbInfoToAttach = openDBs[dbName];
+      
+      if (dbInfo == NULL || dbInfo[@"dbPointer"] == NULL) {
+        RCTLog(@"attach: db name was not found in open databases: %@", dbFileName);
+        pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_ERROR messageAsString:@"Specified db was not open"];
+      }
+      else if (dbInfoToAttach == NULL || dbInfoToAttach[@"dbPointer"] == NULL) {
+        RCTLog(@"attach: db name was not found in open databases: %@", dbName);
+        pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_ERROR messageAsString:@"Specified db for ALIAS was not open"];
+      } else {
+        sqlite3 *db = [((NSValue *) dbInfo[@"dbPointer"]) pointerValue];
+        NSString *dbPathToAttach = dbInfoToAttach[@"dbPath"];
+        
+        NSString* sql = [NSString stringWithFormat:@"ATTACH DATABASE '%@' AS %@", dbPathToAttach, dbAlias];
+        
+        if(sqlite3_exec(db, [sql UTF8String], NULL, NULL, NULL) == SQLITE_OK) {
+          pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_OK messageAsString:@"Database attached successfully."];
+        } else {
+          pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_ERROR messageAsString:@"Unable to attach DB"];
+        }
+      }
+    }
   }
   
   [pluginResult.status intValue] == SQLiteStatus_OK ? success(@[pluginResult.message]) : error(@[pluginResult.message]);
@@ -274,25 +367,27 @@ RCT_EXPORT_METHOD(close: (NSDictionary *) options success:(RCTResponseSenderBloc
 RCT_EXPORT_METHOD(delete: (NSDictionary *) options success:(RCTResponseSenderBlock)success error:(RCTResponseSenderBlock)error)
 {
   SQLiteResult* pluginResult = nil;
-  NSString *dbFileName = [options objectForKey:@"path"];
-  NSString *dblocation = [options objectForKey:@"dblocation"];
-  if (dblocation == NULL) dblocation = @"docs";
-  
-  if (dbFileName==NULL) {
-    // Should not happen:
-    NSLog(@"No db name specified for delete");
-    pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_ERROR messageAsString:@"You must specify database path"];
-  } else {
-    NSString *dbPath = [self getDBPath:dbFileName at:dblocation];
+  NSString *dbfilename = options[@"path"];
+  NSString *dblocation = options[@"dblocation"];
     
-    if ([[NSFileManager defaultManager]fileExistsAtPath:dbPath]) {
-      NSLog(@"delete full db path: %@", dbPath);
-      [[NSFileManager defaultManager]removeItemAtPath:dbPath error:nil];
-      [openDBs removeObjectForKey:dbFileName];
-      pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_OK messageAsString:@"DB deleted"];
+  @synchronized (self) {
+    if (dbfilename == NULL) {
+      // Should not happen:
+      RCTLog(@"No db name specified for delete");
+      pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_ERROR messageAsString:@"You must specify database path"];
     } else {
-      NSLog(@"delete: db was not found: %@", dbPath);
-      pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_ERROR messageAsString:@"The database does not exist on that path"];
+      if (dblocation == NULL) dblocation = @"nosync";
+      NSString *dbPath = [self getDBPath:dbfilename at:dblocation];
+    
+      if ([[NSFileManager defaultManager] fileExistsAtPath:dbPath]) {
+        RCTLog(@"delete full db path: %@", dbPath);
+        [[NSFileManager defaultManager]removeItemAtPath:dbPath error:nil];
+        [openDBs removeObjectForKey:dbfilename];
+        pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_OK messageAsString:@"DB deleted"];
+      } else {
+        RCTLog(@"delete: db was not found: %@", dbPath);
+        pluginResult = [SQLiteResult resultWithStatus:SQLiteStatus_ERROR messageAsString:@"The database does not exist on that path"];
+      }
     }
   }
   
@@ -310,8 +405,8 @@ RCT_EXPORT_METHOD(backgroundExecuteSqlBatch: (NSDictionary *) options success:(R
 RCT_EXPORT_METHOD(executeSqlBatch: (NSDictionary *) options success:(RCTResponseSenderBlock)success error:(RCTResponseSenderBlock)error)
 {
   NSMutableArray *results = [NSMutableArray arrayWithCapacity:0];
-  NSMutableDictionary *dbargs = [options objectForKey:@"dbargs"];
-  NSMutableArray *executes = [options objectForKey:@"executes"];
+  NSMutableDictionary *dbargs = options[@"dbargs"];
+  NSMutableArray *executes = options[@"executes"];
   
   SQLiteResult *pluginResult;
   
@@ -321,7 +416,7 @@ RCT_EXPORT_METHOD(executeSqlBatch: (NSDictionary *) options success:(RCTResponse
       if ([result.status intValue] == SQLiteStatus_ERROR) {
         /* add error with result.message: */
         NSMutableDictionary *r = [NSMutableDictionary dictionaryWithCapacity:4];
-        [r setObject:[dict objectForKey:@"qid"] forKey:@"qid"];
+        [r setObject:dict[@"qid"] forKey:@"qid"];
         [r setObject:@"error" forKey:@"type"];
         [r setObject:result.message forKey:@"error"];
         [r setObject:result.message forKey:@"result"];
@@ -329,7 +424,7 @@ RCT_EXPORT_METHOD(executeSqlBatch: (NSDictionary *) options success:(RCTResponse
       } else {
         /* add result with result.message: */
         NSMutableDictionary *r = [NSMutableDictionary dictionaryWithCapacity:3];
-        [r setObject:[dict objectForKey:@"qid"] forKey:@"qid"];
+        [r setObject:dict[@"qid"] forKey:@"qid"];
         [r setObject:@"success" forKey:@"type"];
         [r setObject:result.message forKey:@"result"];
         [results addObject: r];
@@ -351,8 +446,8 @@ RCT_EXPORT_METHOD(backgroundExecuteSql: (NSDictionary *) options success:(RCTRes
 
 RCT_EXPORT_METHOD(executeSql: (NSDictionary *) options success:(RCTResponseSenderBlock)success error:(RCTResponseSenderBlock)error)
 {
-  NSMutableDictionary *dbargs = [options objectForKey:@"dbargs"];
-  NSMutableDictionary *ex = [options objectForKey:@"ex"];
+  NSMutableDictionary *dbargs = options[@"dbargs"];
+  NSMutableDictionary *ex = options[@"ex"];
   
   SQLiteResult* pluginResult;
   @synchronized (self) {
@@ -364,20 +459,21 @@ RCT_EXPORT_METHOD(executeSql: (NSDictionary *) options success:(RCTResponseSende
 
 -(SQLiteResult *) executeSqlWithDict: (NSMutableDictionary*)options andArgs: (NSMutableDictionary*)dbargs
 {
-  NSString *dbFileName = [dbargs objectForKey:@"dbname"];
-  if (dbFileName == NULL) {
+  NSString *dbfilename = dbargs[@"dbname"];
+  if (dbfilename == NULL) {
     return [SQLiteResult resultWithStatus:SQLiteStatus_ERROR messageAsString:@"You must specify database path"];
   }
   
-  NSMutableArray *params = [options objectForKey:@"params"]; // optional
+  NSMutableArray *params = options[@"params"]; // optional
   
-  NSValue *dbPointer = [openDBs objectForKey:dbFileName];
-  if (dbPointer == NULL) {
+  NSDictionary *dbInfo = openDBs[dbfilename];
+  if (dbInfo == NULL || dbInfo[@"dbPointer"] == NULL){
     return [SQLiteResult resultWithStatus:SQLiteStatus_ERROR messageAsString:@"No such database, you must open it first"];
   }
-  sqlite3 *db = [dbPointer pointerValue];
   
-  NSString *sql = [options objectForKey:@"sql"];
+  sqlite3 *db = [((NSValue *) dbInfo[@"dbPointer"]) pointerValue];
+  
+  NSString *sql = options[@"sql"];
   if (sql == NULL) {
     return [SQLiteResult resultWithStatus:SQLiteStatus_ERROR messageAsString:@"You must specify a sql query to execute"];
   }
@@ -411,7 +507,7 @@ RCT_EXPORT_METHOD(executeSql: (NSDictionary *) options success:(RCTResponseSende
     }
   }
   
-  //    NSLog(@"inside executeSqlWithDict");
+  //    RCTLog(@"inside executeSqlWithDict");
   while (keepGoing) {
     result = sqlite3_step (statement);
     switch (result) {
@@ -435,7 +531,7 @@ RCT_EXPORT_METHOD(executeSql: (NSDictionary *) options success:(RCTResponseSende
               break;
             case SQLITE_BLOB:
               columnValue = [SQLite getBlobAsBase64String: sqlite3_column_blob(statement, i)
-                                                   withLength: sqlite3_column_bytes(statement, i)];
+                                               withLength: sqlite3_column_bytes(statement, i)];
 #ifdef INCLUDE_SQL_BLOB_BINDING // TBD subjet to change:
               columnValue = [@"sqlblob:;base64," stringByAppendingString:columnValue];
 #endif
@@ -548,24 +644,26 @@ RCT_EXPORT_METHOD(executeSql: (NSDictionary *) options success:(RCTResponseSende
 -(void)dealloc
 {
   int i;
-  NSArray *keys = [openDBs allKeys];
-  NSValue *pointer;
-  NSString *key;
-  sqlite3 *db;
+  @synchronized (self) {
+    NSArray *keys = [openDBs allKeys];
+    NSDictionary *dbInfo;
+    NSString *key;
+    sqlite3 *db;
   
-  /* close db the user forgot */
-  for (i=0; i<[keys count]; i++) {
-    key = [keys objectAtIndex:i];
-    pointer = [openDBs objectForKey:key];
-    db = [pointer pointerValue];
-    sqlite3_close (db);
-  }
+    /* close db the user forgot */
+    for (i=0; i<[keys count]; i++) {
+      key = [keys objectAtIndex:i];
+      dbInfo = openDBs[key];
+      db = [((NSValue *) dbInfo[@"dbPointer"]) pointerValue];
+      sqlite3_close (db);
+    }
   
 #if !__has_feature(objc_arc)
-  [openDBs release];
-  [appDBPaths release];
-  [super dealloc];
+    [openDBs release];
+    [appDBPaths release];
+    [super dealloc];
 #endif
+  }
 }
 
 +(NSDictionary *)captureSQLiteErrorFromDb:(struct sqlite3 *)db
@@ -620,6 +718,11 @@ RCT_EXPORT_METHOD(executeSql: (NSDictionary *) options success:(RCTResponseSende
 #endif
   
   return result;
+}
+
++ (BOOL)requiresMainQueueSetup
+{
+  return YES;
 }
 
 @end /* vim: set expandtab : */

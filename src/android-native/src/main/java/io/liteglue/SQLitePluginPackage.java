@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2015, Andrzej Porebski
  */
-package org.pgsqlite;
+package io.liteglue;
 
 import android.app.Activity;
 
@@ -15,29 +15,26 @@ import com.facebook.react.uimanager.ViewManager;
 
 import java.util.ArrayList;
 import java.util.Collections;
-
 import java.util.List;
 
 public class SQLitePluginPackage implements ReactPackage {
 
     /**
-     * @deprecated, use method without activity
+     * @deprecated Please use version without activity parameter
      * activity parameter is ignored
      */
-    public SQLitePluginPackage(Activity activity){
+    public SQLitePluginPackage(Activity activity) {
         this();
     }
 
-    public SQLitePluginPackage() {
+    public SQLitePluginPackage(){
     }
 
     @Override
     public List<NativeModule> createNativeModules(
                                 ReactApplicationContext reactContext) {
       List<NativeModule> modules = new ArrayList<>();
-
       modules.add(new SQLitePlugin(reactContext));
-
       return modules;
     }
 

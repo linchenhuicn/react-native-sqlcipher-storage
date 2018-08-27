@@ -4,7 +4,7 @@
  * Copyright (c) 2015, Andrzej Porebski
  */
 
-package org.pgsqlite;
+package io.liteglue;
 
 import com.facebook.react.bridge.NoSuchKeyException;
 import com.facebook.react.bridge.ReadableArray;

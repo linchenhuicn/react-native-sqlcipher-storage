@@ -1,7 +1,7 @@
 {
-  "name": "react-native-sqlcipher-storage",
-  "version": "0.0.2",
-  "description": "SQLCipher bindings for React Native (Android & iOS)",
+  "name": "react-native-sqlite-storage",
+  "version": "3.3.6",
+  "description": "SQLite3 bindings for React Native (Android & iOS)",
   "main": "sqlite.js",
   "scripts": {
     "test": "echo \"Error: no test specified yet\" && exit 1"
@@ -30,5 +30,16 @@
   "homepage": "https://github.com/axsy-dev/react-native-sqlcipher-storage",
   "peerDependencies": {
     "react-native": ">=0.40.0"
+  },
+  "dependencies": {
+    "xcode": "0.8.9"
+  },
+  "rnpm": {
+    "commands": {
+      "postlink": "node_modules/react-native-sqlite-storage/scripts/rnpm-postlink.js"
+    },
+    "ios": {
+      "project": "src/ios/SQLite.xcodeproj"
+    }
   }
 }
