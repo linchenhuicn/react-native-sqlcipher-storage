@@ -196,7 +196,7 @@ RCT_EXPORT_METHOD(open: (NSDictionary *) options success:(RCTResponseSenderBlock
           if (dblocation == NULL) dblocation = @"nosync";
           RCTLog(@"target database location: %@", dblocation);
         
-          dbname = [self getDBPath:dbfilename at:dblocation]
+          dbname = [self getDBPath:dbfilename at:dblocation];
         
           /* Option to create from resource (pre-populated) if db does not exist: */
           if (![[NSFileManager defaultManager] fileExistsAtPath:dbname] && assetFilePath != NULL) {
