@@ -196,16 +196,13 @@ RCT_EXPORT_METHOD(open: (NSDictionary *) options success:(RCTResponseSenderBlock
           if (dblocation == NULL) dblocation = @"nosync";
           RCTLog(@"target database location: %@", dblocation);
         
-        // for SQLCipher version:
-        NSString *dbkey = [options objectForKey:@"key"];
-        const char *key = NULL;
-        if (dbkey != NULL) key = [dbkey UTF8String];
-        if (key != NULL) sqlite3_key(db, key, strlen(key));
+          dbname = [self getDBPath:dbfilename at:dblocation]
         
-        /* Option to create from resource (pre-populated) if db does not exist: */
-        if (![[NSFileManager defaultManager] fileExistsAtPath:dbname] && assetFilePath != NULL) {
-          RCTLog(@"Copying pre-populated asset to the destination directory");
-          [self createFromResource:assetFilePath withDbname:dbname];
+          /* Option to create from resource (pre-populated) if db does not exist: */
+          if (![[NSFileManager defaultManager] fileExistsAtPath:dbname] && assetFilePath != NULL) {
+            RCTLog(@"Copying pre-populated asset to the destination directory");
+            [self createFromResource:assetFilePath withDbname:dbname];
+          }
         }
       
         RCTLog(@"Opening db in mode %@, full path: %@", (sqlOpenFlags == SQLITE_OPEN_READONLY) ? @"READ ONLY" : @"READ_WRITE",dbname);
